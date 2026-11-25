@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Сигнал</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { --red: #ff1e1e; }
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden;
+    -webkit-user-select: none; user-select: none; }
+  #pulse { position: fixed; inset: 0; opacity: 0; pointer-events: none;
+    background: radial-gradient(circle at 50% 45%, var(--red) 0%, #b00000 55%, #300000 100%); }
+  #ask { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 28px; padding: 24px; box-sizing: border-box; text-align: center; }
+  #code { font-size: 44px; letter-spacing: 14px; color: #fff; font-variant-numeric: tabular-nums; }
+  #q { font-size: 24px; color: #fff; }
+  .row { display: flex; gap: 14px; width: 100%; max-width: 420px; }
+  button { flex: 1; font-size: 21px; padding: 22px 8px; border-radius: 14px; border: 0;
+    background: #1d1d1d; color: #fff; }
+  button:active { background: #333; }
+  #cant { font-size: 16px; padding: 14px; background: #111; color: #999; }
+  #note { font-size: 14px; color: #666; }
+</style>
+</head>
+<body>
+<div id="pulse"></div>
+<div id="ask">
+  <div id="code"></div>
+  <div id="q">Я сплю или не сплю?</div>
+  <div class="row"><button data-a="sleep">😴 Сплю</button><button data-a="awake">👁 Не сплю</button></div>
+  <div class="row"><button id="cant" data-a="cant">🚫 Не могу сейчас</button></div>
+  <div id="note"></div>
+</div>
+<script>
+// Якорь — один и тот же днём и ночью (методика §7): 3 медленных красных пульса.
+const PULSES = 3, RISE = 500, HOLD = 250, FALL = 550, GAP = 400;
+
+const tg = window.Telegram && Telegram.WebApp;
+const P = new URLSearchParams(location.search);
+const sid = P.get("id") || "", code = (P.get("c") || "").split("").join(" ");
+const t0 = performance.now();
+let tAsk = null, done = false;
+
+if (tg) {
+  tg.ready(); tg.expand();
+  try { tg.setHeaderColor("#000000"); tg.setBackgroundColor("#000000"); } catch (e) {}
+  try { if (tg.requestFullscreen) tg.requestFullscreen(); } catch (e) {}
+  try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
+}
+
+const pulse = document.getElementById("pulse");
+function one(i) {
+  return pulse.animate(
+    [{ opacity: 0 }, { opacity: 1, offset: RISE / (RISE + HOLD + FALL) },
+     { opacity: 1, offset: (RISE + HOLD) / (RISE + HOLD + FALL) }, { opacity: 0 }],
+    { duration: RISE + HOLD + FALL, easing: "ease-in-out" }).finished;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function run() {
+  await sleep(300);
+  for (let i = 0; i < PULSES; i++) {
+    setTimeout(() => { try { tg && tg.HapticFeedback.impactOccurred("heavy"); } catch (e) {} }, RISE);
+    await one(i);
+    if (i < PULSES - 1) await sleep(GAP);
+  }
+  document.getElementById("code").textContent = code;
+  document.getElementById("ask").style.display = "flex";
+  tAsk = performance.now();
+}
+
+document.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => {
+  if (done || tAsk === null) return;
+  done = true;
+  const data = { v: 1, id: sid, a1: b.dataset.a,
+                 ms: Math.round(performance.now() - tAsk), open_ms: Math.round(tAsk - t0) };
+  if (tg && tg.initData !== undefined && tg.sendData) {
+    tg.sendData(JSON.stringify(data));   // ответ уходит боту, страница закрывается
+  } else {
+    document.getElementById("note").textContent = "Проба вне Telegram: " + JSON.stringify(data);
+  }
+}));
+
+run();
+</script>
+</body>
+</html>
