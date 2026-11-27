@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>ОС Ночь</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { --red: #ff1e1e; }
+  html, body { margin: 0; height: 100%; background: #000; color: #bbb; overflow: hidden;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; }
+  #pulse { position: fixed; inset: 0; opacity: 0; pointer-events: none; z-index: 5;
+    background: radial-gradient(circle at 50% 45%, var(--red) 0%, #b00000 55%, #300000 100%); }
+  .screen { position: fixed; inset: 0; display: none; box-sizing: border-box; padding: 22px 18px;
+    overflow-y: auto; }
+  .on { display: block; }
+  h1 { font-size: 22px; color: #ddd; margin: 4px 0 14px; font-weight: 500; }
+  button { font-size: 19px; padding: 16px 10px; border-radius: 12px; border: 0; background: #1a1a1a; color: #ddd;
+    width: 100%; margin: 6px 0; }
+  button:active { background: #2c2c2c; }
+  button.main { background: #2a0606; color: #fff; font-size: 21px; padding: 20px 10px; }
+  .row { display: flex; gap: 10px; } .row button { flex: 1; }
+  .small { font-size: 14px; color: #777; line-height: 1.45; }
+  .warn { color: #c96; }
+  label { display: block; margin: 14px 0 4px; color: #999; font-size: 15px; }
+  input[type=range] { width: 100%; }
+  input[type=number] { width: 64px; font-size: 17px; background: #111; color: #ddd; border: 1px solid #333;
+    border-radius: 6px; padding: 4px; }
+  details { margin-top: 16px; } summary { color: #888; font-size: 15px; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #666; }
+  /* ночной экран: только чёрный; панель по касанию, тусклая, каждый раз в новом месте (AMOLED) */
+  #night { background: #000; padding: 0; }
+  #panel { position: absolute; left: 10%; width: 80%; display: none; text-align: center; }
+  #panel button { background: #0d0d0d; color: #555; font-size: 18px; }
+  #panel .small { color: #444; }
+</style>
+</head>
+<body>
+<div id="pulse"></div>
+
+<!-- вечер: подготовка -->
+<div id="setup" class="screen">
+  <h1>🌙 ОС — ночные вспышки</h1>
+  <div id="unsent"></div>
+  <button class="main" id="go-night">🌙 Лёг — ночь</button>
+  <div class="row"><button id="go-nap">😴 Дневной сон</button><button id="go-test">🧪 Пробная (30 мин)</button></div>
+
+  <label>Яркость вспышки: <b id="br-val"></b></label>
+  <input type="range" id="br" min="5" max="100" step="5">
+  <button id="preview">🔴 Показать вспышку</button>
+
+  <p class="small">Перед сном:<br>
+    1. Телефон на зарядке, экраном к кровати, на краю зрения.<br>
+    2. Системная яркость — низкая; вспышку подстрой ползунком.<br>
+    3. «Не беспокоить» включить. Звук не нужен.<br>
+    4. После «Лёг» закрепить приложение (Обзор → значок приложения → «Закрепить»).<br>
+    Ночью экран чёрный. Коснись — появятся кнопки.</p>
+  <p class="small" id="caps"></p>
+
+  <details><summary>Настройки расписания</summary>
+    <label>Цикл сна, мин <input type="number" id="c-len" min="60" max="120"></label>
+    <label>Вспышки в циклах с <input type="number" id="c-from" min="1" max="8"> по <input type="number" id="c-to" min="1" max="9"></label>
+    <label>Окно начинается за <input type="number" id="c-pre" min="0" max="60"> мин до конца цикла, длится <input type="number" id="c-win" min="5" max="60"> мин</label>
+    <label>Вспышка в окне раз в <input type="number" id="c-step" min="2" max="30"> мин</label>
+    <label>WBTB: после «Снова ложусь» окно с <input type="number" id="w-from" min="20" max="180"> по <input type="number" id="w-to" min="20" max="240"> мин</label>
+    <label>Дневной сон: окно с <input type="number" id="n-from" min="10" max="180"> по <input type="number" id="n-to" min="10" max="240"> мин</label>
+    <button id="cfg-reset">Вернуть по умолчанию</button>
+  </details>
+</div>
+
+<!-- ночь: чёрный экран -->
+<div id="night" class="screen">
+  <div id="panel">
+    <div class="small" id="p-info"></div>
+    <div id="p-asleep">
+      <button id="b-woke">👁 Проснулся</button>
+      <button id="b-up">🌅 Встал</button>
+    </div>
+    <div id="p-awake" style="display:none">
+      <div class="small">Запиши сон голосовым в @oman_dream_bot, потом:</div>
+      <button id="b-back">🛏 Снова ложусь</button>
+      <button id="b-up2">🌅 Встал</button>
+    </div>
+  </div>
+</div>
+
+<!-- утро: отчёт -->
+<div id="report" class="screen">
+  <h1>🌅 Ночь окончена</h1>
+  <pre id="r-text" style="font-size:15px;color:#bbb"></pre>
+  <button class="main" id="r-share">📤 Отправить в бот сигналов</button>
+  <button id="r-copy">📋 Скопировать и открыть бот</button>
+  <p class="small">«Отправить» → Telegram → чат @oman_signal_bot → отправить как есть. Отчёт хранится, пока не отправишь.</p>
+  <button id="r-sent">✅ Отправлено</button>
+  <div class="small" id="r-note"></div>
+</div>
+
+<script>
+"use strict";
+// Якорь тот же, что днём (index.html): 3 медленных красных пульса. Ночью — без вибрации и вопросов.
+const PULSES = 3, RISE = 500, HOLD = 250, FALL = 550, GAP = 400;
+const BOT = "oman_signal_bot";
+const MIN = 60000;
+const DEF = { br: 30, len: 90, from: 3, to: 6, pre: 15, win: 25, step: 5, wfrom: 60, wto: 90, nfrom: 45, nto: 90 };
+const TEST = [1, 3, 6, 10, 15, 20, 30];          // пробная: минуты от старта
+const AUTO_BACK_MIN = 20;                         // «Проснулся» без кнопок 20 мин → считаем, что снова уснул
+const QUIET_AFTER_BACK_MIN = 0;
+const LATE_SKIP_MIN = 4;                          // страница «спала» дольше — пропущенные вспышки не догоняем
+const K_CFG = "osn_cfg", K_CUR = "osn_cur", K_UNSENT = "osn_unsent", K_HIST = "osn_hist";
+
+const $ = id => document.getElementById(id);
+const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const now = () => Date.now();
+const sec = ms => Math.round(ms / 1000);
+const hm = ms => new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+const dur = ms => { const m = Math.round(ms / MIN); return (m >= 60 ? Math.floor(m / 60) + " ч " : "") + (m % 60) + " мин"; };
+
+let cfg = Object.assign({}, DEF, load(K_CFG, {}));
+let cur = load(K_CUR, null);                      // текущая ночь (переживает перезагрузку страницы)
+
+// ---------------------------------------------------------------- вспышка
+const pulse = $("pulse");
+const pause = ms => new Promise(r => setTimeout(r, ms));
+let flashing = false;
+async function flash(br) {
+  if (flashing) return; flashing = true;
+  const a = Math.max(0.03, Math.min(1, br / 100)), T = RISE + HOLD + FALL;
+  try {
+    for (let i = 0; i < PULSES; i++) {
+      await pulse.animate([{ opacity: 0 }, { opacity: a, offset: RISE / T }, { opacity: a, offset: (RISE + HOLD) / T },
+                           { opacity: 0 }], { duration: T, easing: "ease-in-out" }).finished;
+      if (i < PULSES - 1) await pause(GAP);
+    }
+  } finally { pulse.style.opacity = 0; flashing = false; }
+}
+
+// ---------------------------------------------------------------- расписание (считается из событий ночи)
+function plan(c) {
+  const t = [];
+  const add = (base, from, to, step) => { for (let m = from; m <= to + 1e-9; m += step) t.push(base + m * MIN); };
+  if (c.mode === "night") {
+    for (let n = c.cfg.from; n <= c.cfg.to; n++) {
+      const s = n * c.cfg.len - c.cfg.pre;
+      add(c.lay, s, s + c.cfg.win - 1, c.cfg.step);
+    }
+  } else if (c.mode === "nap") {
+    add(c.lay, c.cfg.nfrom, c.cfg.nto, c.cfg.step);
+  } else {
+    TEST.forEach(m => t.push(c.lay + m * MIN));
+  }
+  c.back.forEach(b => add(b.t, c.cfg.wfrom, c.cfg.wto, c.cfg.step));
+  // пока «проснулся» и не лёг снова — вспышек нет
+  const awakeSpans = [];
+  c.woke.forEach(w => {
+    const b = c.back.find(x => x.t >= w.t);
+    awakeSpans.push([w.t, b ? b.t + QUIET_AFTER_BACK_MIN * MIN : Infinity]);
+  });
+  return t.filter(x => !awakeSpans.some(([a, b]) => x >= a && x < b)).sort((a, b) => a - b);
+}
+
+function isAwake(c) {
+  const w = c.woke[c.woke.length - 1];
+  return !!w && !c.back.some(b => b.t >= w.t);
+}
+
+// ---------------------------------------------------------------- Wake Lock
+let lock = null;
+async function getLock() {
+  if (!("wakeLock" in navigator)) return false;
+  try {
+    lock = await navigator.wakeLock.request("screen");
+    lock.addEventListener("release", () => { lock = null; });
+    return true;
+  } catch (e) { return false; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (!cur) return;
+  if (document.visibilityState === "visible") { getLock(); ev("показ"); }
+  else ev("скрыта");                            // страница ушла с экрана — важно для пробной ночи на HyperOS
+});
+
+function ev(name) { if (!cur) return; cur.log.push([sec(now() - cur.lay), name]); if (cur.log.length > 300) cur.log.shift(); save(K_CUR, cur); }
+
+// ---------------------------------------------------------------- ночной цикл
+let lastTick = now();
+function tick() {
+  const t = now();
+  if (!cur) { lastTick = t; return; }
+  const gap = t - lastTick; lastTick = t;
+  if (gap > 60000) cur.freeze.push([sec(t - gap - cur.lay), sec(gap)]);   // страница замирала
+  if (cur.woke.length && isAwake(cur)) {
+    const w = cur.woke[cur.woke.length - 1];
+    if (t - w.t > AUTO_BACK_MIN * MIN && !panelShown) { cur.back.push({ t: w.t + AUTO_BACK_MIN * MIN, auto: 1 }); showAwake(false); }
+  }
+  const due = plan(cur).filter(x => x > cur.cursor && x <= t);
+  if (due.length) {
+    const last = due[due.length - 1];
+    due.slice(0, -1).forEach(x => cur.skip.push(sec(x - cur.lay)));
+    cur.cursor = last;
+    if (t - last <= LATE_SKIP_MIN * MIN) { cur.flashes.push(sec(t - cur.lay)); flash(cur.cfg.br); }
+    else cur.skip.push(sec(last - cur.lay));
+  }
+  save(K_CUR, cur);
+}
+setInterval(tick, 1000);
+
+// ---------------------------------------------------------------- экраны
+function show(id) { document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === id)); }
+
+function start(mode) {
+  const t = now();
+  cur = { v: 1, mode, lay: t, cursor: t, cfg: Object.assign({}, cfg), flashes: [], skip: [], woke: [], back: [],
+          freeze: [], log: [], tz: -new Date().getTimezoneOffset() };
+  save(K_CUR, cur);
+  try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
+  getLock().then(ok => { if (!ok) ev("нет wakelock"); });
+  show("night"); hidePanel();
+}
+
+// панель по касанию
+let panelShown = false, panelTimer = null;
+function showPanel() {
+  const p = $("panel"), c = cur; if (!c) return;
+  const nf = plan(c).filter(x => x > c.cursor).length;
+  $("p-info").textContent = `${c.mode === "night" ? "Ночь" : c.mode === "nap" ? "Дневной сон" : "Проба"} · ${dur(now() - c.lay)} · вспышек ${c.flashes.length}` +
+                            (nf ? "" : " · больше не будет") + (lock ? "" : " · ⚠ экран может погаснуть");
+  $("p-asleep").style.display = isAwake(c) ? "none" : "block";
+  $("p-awake").style.display = isAwake(c) ? "block" : "none";
+  p.style.top = (12 + Math.random() * 45) + "%";
+  p.style.display = "block"; panelShown = true;
+  clearTimeout(panelTimer); panelTimer = setTimeout(hidePanel, 12000);
+}
+function hidePanel() { $("panel").style.display = "none"; panelShown = false; }
+$("night").addEventListener("click", e => { if (e.target.tagName !== "BUTTON") { if (panelShown) hidePanel(); else showPanel(); } });
+
+function showAwake(rerender = true) { save(K_CUR, cur); if (rerender && panelShown) showPanel(); }
+$("b-woke").onclick = () => {
+  const t = now(), lf = cur.flashes.length ? cur.lay + cur.flashes[cur.flashes.length - 1] * 1000 : null;
+  cur.woke.push({ t, af: lf && t - lf < 3 * MIN ? 1 : 0 });   // af: проснулся в пределах 3 мин после вспышки
+  showAwake(); showPanel();
+};
+$("b-back").onclick = () => { cur.back.push({ t: now() }); save(K_CUR, cur); hidePanel(); };
+$("b-up").onclick = $("b-up2").onclick = () => finish();
+
+// ---------------------------------------------------------------- утро: отчёт
+function finish() {
+  const c = cur, end = now();
+  const s = x => sec(x);
+  const data = { v: 1, id: s(c.lay), mode: c.mode, lay: s(c.lay), end: s(end), tz: c.tz, br: c.cfg.br,
+                 cfg: [c.cfg.len, c.cfg.from, c.cfg.to, c.cfg.pre, c.cfg.win, c.cfg.step],
+                 f: c.flashes, sk: c.skip, w: c.woke.map(w => [sec(w.t - c.lay), w.af]),
+                 b: c.back.map(b => [sec(b.t - c.lay), b.auto ? 1 : 0]), fr: c.freeze, lg: c.log };
+  const name = c.mode === "night" ? "Ночь" : c.mode === "nap" ? "Дневной сон" : "Пробная ночь";
+  const d = new Date(c.lay).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  const af = c.woke.filter(w => w.af).length;
+  const head = `🌙 ${name} ${d} · лёг ${hm(c.lay)} · встал ${hm(end)} (${dur(end - c.lay)})\n` +
+               `Вспышек: ${c.flashes.length} · проснулся: ${c.woke.length}${af ? ` (сразу после вспышки: ${af})` : ""}` +
+               (c.freeze.length ? ` · страница замирала: ${c.freeze.length}` : "") +
+               (c.skip.length ? ` · пропущено вспышек: ${c.skip.length}` : "");
+  const text = head + "\n#ночь1 " + JSON.stringify(data);
+  const unsent = load(K_UNSENT, []); unsent.push({ id: data.id, head, text }); save(K_UNSENT, unsent.slice(-10));
+  const hist = load(K_HIST, []); hist.push(data); save(K_HIST, hist.slice(-60));
+  cur = null; localStorage.removeItem(K_CUR);
+  if (lock) { lock.release(); lock = null; }
+  try { document.fullscreenElement && document.exitFullscreen(); } catch (e) {}
+  openReport();
+}
+
+function openReport() {
+  const u = load(K_UNSENT, []);
+  if (!u.length) { openSetup(); return; }
+  $("r-text").textContent = u.map(x => x.head).join("\n\n");
+  $("r-note").textContent = "";
+  show("report");
+}
+const allText = () => load(K_UNSENT, []).map(x => x.text).join("\n\n");
+$("r-share").onclick = async () => {
+  if (navigator.share) {
+    try { await navigator.share({ text: allText() }); $("r-note").textContent = "Если отправил — нажми «✅ Отправлено»."; }
+    catch (e) { $("r-note").textContent = "Не отправлено. Можно скопировать."; }
+  } else $("r-copy").onclick();
+};
+$("r-copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(allText()); } catch (e) { $("r-note").textContent = "Не удалось скопировать."; return; }
+  $("r-note").textContent = "Скопировано. Вставь в чат бота и отправь.";
+  setTimeout(() => { location.href = "https://t.me/" + BOT; }, 600);
+};
+$("r-sent").onclick = () => { save(K_UNSENT, []); openSetup(); };
+
+// ---------------------------------------------------------------- вечер: настройки
+const F = { "c-len": "len", "c-from": "from", "c-to": "to", "c-pre": "pre", "c-win": "win", "c-step": "step",
+            "w-from": "wfrom", "w-to": "wto", "n-from": "nfrom", "n-to": "nto" };
+function openSetup() {
+  $("br").value = cfg.br; $("br-val").textContent = cfg.br + "%";
+  Object.entries(F).forEach(([id, k]) => { $(id).value = cfg[k]; });
+  const u = load(K_UNSENT, []);
+  $("unsent").innerHTML = u.length ? '<button id="to-report">📤 Отчёт не отправлен (' + u.length + ')</button>' : "";
+  if (u.length) $("to-report").onclick = openReport;
+  const caps = [];
+  if (!("wakeLock" in navigator)) caps.push('<span class="warn">⚠ Браузер не умеет держать экран включённым — нужен Chrome.</span>');
+  if (!window.matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches)
+    caps.push("Совет: установи как приложение — меню Chrome ⋮ → «Добавить на главный экран».");
+  $("caps").innerHTML = caps.join("<br>");
+  show("setup");
+}
+$("br").oninput = () => { cfg.br = +$("br").value; $("br-val").textContent = cfg.br + "%"; save(K_CFG, cfg); };
+Object.entries(F).forEach(([id, k]) => $(id).addEventListener("change", () => {
+  const v = +$(id).value; if (v > 0) { cfg[k] = v; save(K_CFG, cfg); } else $(id).value = cfg[k];
+}));
+$("cfg-reset").onclick = () => { cfg = Object.assign({}, DEF); save(K_CFG, cfg); openSetup(); };
+$("preview").onclick = () => flash(cfg.br);
+$("go-night").onclick = () => start("night");
+$("go-nap").onclick = () => start("nap");
+$("go-test").onclick = () => start("test");
+
+// ---------------------------------------------------------------- старт
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if (cur) {                                     // страницу перезапустили посреди ночи — продолжаем
+  cur.log.push([sec(now() - cur.lay), "перезапуск"]); save(K_CUR, cur);
+  show("night"); getLock();
+} else openReport();
+</script>
+</body>
+</html>
