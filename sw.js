@@ -1,5 +1,5 @@
 // Ночная страница работает без интернета: файлы из кэша, обновление — в фоне.
-const CACHE = "os-night-v1";
+const CACHE = "os-night-v2";
 const FILES = ["night.html", "manifest.json", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

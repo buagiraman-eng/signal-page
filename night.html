@@ -33,9 +33,11 @@
   pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #666; }
   /* ночной экран: только чёрный; панель по касанию, тусклая, каждый раз в новом месте (AMOLED) */
   #night { background: #000; padding: 0; }
-  #panel { position: absolute; left: 10%; width: 80%; display: none; text-align: center; }
-  #panel button { background: #0d0d0d; color: #555; font-size: 18px; }
-  #panel .small { color: #444; }
+  #panel { position: absolute; left: 6%; width: 88%; display: none; text-align: center; }
+  #panel button { background: #161616; color: #aaa; font-size: 21px; padding: 22px 10px; margin: 8px 0; }
+  #panel button.big { background: #1f0a0a; color: #ccc; font-size: 23px; padding: 28px 10px; }
+  #panel button.end { margin-top: 34px; font-size: 17px; padding: 16px 10px; color: #888; }
+  #panel .small { color: #777; font-size: 15px; margin: 6px 0; }
 </style>
 </head>
 <body>
@@ -76,13 +78,13 @@
   <div id="panel">
     <div class="small" id="p-info"></div>
     <div id="p-asleep">
-      <button id="b-woke">👁 Проснулся</button>
-      <button id="b-up">🌅 Встал</button>
+      <button id="b-woke" class="big">👁 Проснулся — посплю ещё</button>
+      <button id="b-up" class="end">🌅 Встал — ночь закончена</button>
     </div>
     <div id="p-awake" style="display:none">
-      <div class="small">Запиши сон голосовым в @oman_dream_bot, потом:</div>
-      <button id="b-back">🛏 Снова ложусь</button>
-      <button id="b-up2">🌅 Встал</button>
+      <div class="small">Можно надиктовать сон в @oman_dream_bot. Когда ложишься:</div>
+      <button id="b-back" class="big">🛏 Снова ложусь</button>
+      <button id="b-up2" class="end">🌅 Встал — ночь закончена</button>
     </div>
   </div>
 </div>
@@ -91,9 +93,11 @@
 <div id="report" class="screen">
   <h1>🌅 Ночь окончена</h1>
   <pre id="r-text" style="font-size:15px;color:#bbb"></pre>
-  <button class="main" id="r-share">📤 Отправить в бот сигналов</button>
-  <button id="r-copy">📋 Скопировать и открыть бот</button>
-  <p class="small">«Отправить» → Telegram → чат @oman_signal_bot → отправить как есть. Отчёт хранится, пока не отправишь.</p>
+  <button id="r-undo">↩ Я ещё сплю — вернуться в ночь</button>
+  <button class="main" id="r-copy">📋 Скопировать отчёт → открыть чат бота сигналов</button>
+  <p class="small">Откроется Telegram, чат @oman_signal_bot. Удержи палец в поле ввода → «Вставить» → отправить.
+    Потом вернись сюда и нажми «✅ Отправлено».</p>
+  <button id="r-share">📤 Поделиться (выбрать чат вручную)</button>
   <button id="r-sent">✅ Отправлено</button>
   <div class="small" id="r-note"></div>
 </div>
@@ -104,12 +108,13 @@
 const PULSES = 3, RISE = 500, HOLD = 250, FALL = 550, GAP = 400;
 const BOT = "oman_signal_bot";
 const MIN = 60000;
-const DEF = { br: 30, len: 90, from: 3, to: 6, pre: 15, win: 25, step: 5, wfrom: 60, wto: 90, nfrom: 45, nto: 90 };
+// cv — версия настроек. v2 (28.11): вспышки со 2-го цикла — ночи бывают короткими (решение Омана).
+const DEF = { cv: 2, br: 30, len: 90, from: 2, to: 6, pre: 15, win: 25, step: 5, wfrom: 60, wto: 90, nfrom: 45, nto: 90 };
 const TEST = [1, 3, 6, 10, 15, 20, 30];          // пробная: минуты от старта
 const AUTO_BACK_MIN = 20;                         // «Проснулся» без кнопок 20 мин → считаем, что снова уснул
 const QUIET_AFTER_BACK_MIN = 0;
 const LATE_SKIP_MIN = 4;                          // страница «спала» дольше — пропущенные вспышки не догоняем
-const K_CFG = "osn_cfg", K_CUR = "osn_cur", K_UNSENT = "osn_unsent", K_HIST = "osn_hist";
+const K_CFG = "osn_cfg", K_CUR = "osn_cur", K_UNSENT = "osn_unsent", K_HIST = "osn_hist", K_LAST = "osn_last";
 
 const $ = id => document.getElementById(id);
 const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
@@ -119,7 +124,11 @@ const sec = ms => Math.round(ms / 1000);
 const hm = ms => new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 const dur = ms => { const m = Math.round(ms / MIN); return (m >= 60 ? Math.floor(m / 60) + " ч " : "") + (m % 60) + " мин"; };
 
-let cfg = Object.assign({}, DEF, load(K_CFG, {}));
+let cfg = (() => {
+  const s = load(K_CFG, {});
+  if ((s.cv || 1) < 2) { s.from = DEF.from; s.cv = 2; }       // старые настройки: перенос на 2-й цикл, яркость сохраняется
+  const c = Object.assign({}, DEF, s); save(K_CFG, c); return c;
+})();
 let cur = load(K_CUR, null);                      // текущая ночь (переживает перезагрузку страницы)
 
 // ---------------------------------------------------------------- вспышка
@@ -215,7 +224,7 @@ function start(mode) {
   const t = now();
   cur = { v: 1, mode, lay: t, cursor: t, cfg: Object.assign({}, cfg), flashes: [], skip: [], woke: [], back: [],
           freeze: [], log: [], tz: -new Date().getTimezoneOffset() };
-  save(K_CUR, cur);
+  save(K_CUR, cur); localStorage.removeItem(K_LAST);
   try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
   getLock().then(ok => { if (!ok) ev("нет wakelock"); });
   show("night"); hidePanel();
@@ -226,8 +235,10 @@ let panelShown = false, panelTimer = null;
 function showPanel() {
   const p = $("panel"), c = cur; if (!c) return;
   const nf = plan(c).filter(x => x > c.cursor).length;
-  $("p-info").textContent = `${c.mode === "night" ? "Ночь" : c.mode === "nap" ? "Дневной сон" : "Проба"} · ${dur(now() - c.lay)} · вспышек ${c.flashes.length}` +
-                            (nf ? "" : " · больше не будет") + (lock ? "" : " · ⚠ экран может погаснуть");
+  const what = !nf ? "больше вспышек не будет" :
+               c.flashes.length ? `вспышек было: ${c.flashes.length}, ещё будут` : "вспышек пока не было — первая серия впереди";
+  $("p-info").textContent = `${c.mode === "night" ? "Ночь" : c.mode === "nap" ? "Дневной сон" : "Проба"} идёт · ${what}` +
+                            (lock ? "" : " · ⚠ экран может погаснуть");
   $("p-asleep").style.display = isAwake(c) ? "none" : "block";
   $("p-awake").style.display = isAwake(c) ? "block" : "none";
   p.style.top = (12 + Math.random() * 45) + "%";
@@ -264,6 +275,7 @@ function finish() {
   const text = head + "\n#ночь1 " + JSON.stringify(data);
   const unsent = load(K_UNSENT, []); unsent.push({ id: data.id, head, text }); save(K_UNSENT, unsent.slice(-10));
   const hist = load(K_HIST, []); hist.push(data); save(K_HIST, hist.slice(-60));
+  save(K_LAST, c);                                // для «↩ вернуться в ночь»
   cur = null; localStorage.removeItem(K_CUR);
   if (lock) { lock.release(); lock = null; }
   try { document.fullscreenElement && document.exitFullscreen(); } catch (e) {}
@@ -275,8 +287,19 @@ function openReport() {
   if (!u.length) { openSetup(); return; }
   $("r-text").textContent = u.map(x => x.head).join("\n\n");
   $("r-note").textContent = "";
+  $("r-undo").style.display = load(K_LAST, null) ? "block" : "none";
   show("report");
 }
+// случайное «Встал»: ночь продолжается с того же места, отчёт этой ночи убирается
+$("r-undo").onclick = () => {
+  const c = load(K_LAST, null); if (!c) return;
+  save(K_UNSENT, load(K_UNSENT, []).filter(x => x.id !== sec(c.lay)));
+  save(K_HIST, load(K_HIST, []).filter(x => x.id !== sec(c.lay)));
+  localStorage.removeItem(K_LAST);
+  cur = c; ev("отмена «Встал»"); lastTick = now();
+  try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
+  getLock(); show("night"); hidePanel();
+};
 const allText = () => load(K_UNSENT, []).map(x => x.text).join("\n\n");
 $("r-share").onclick = async () => {
   if (navigator.share) {
@@ -289,7 +312,7 @@ $("r-copy").onclick = async () => {
   $("r-note").textContent = "Скопировано. Вставь в чат бота и отправь.";
   setTimeout(() => { location.href = "https://t.me/" + BOT; }, 600);
 };
-$("r-sent").onclick = () => { save(K_UNSENT, []); openSetup(); };
+$("r-sent").onclick = () => { save(K_UNSENT, []); localStorage.removeItem(K_LAST); openSetup(); };
 
 // ---------------------------------------------------------------- вечер: настройки
 const F = { "c-len": "len", "c-from": "from", "c-to": "to", "c-pre": "pre", "c-win": "win", "c-step": "step",
