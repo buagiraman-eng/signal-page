@@ -99,6 +99,7 @@
     Потом вернись сюда и нажми «✅ Отправлено».</p>
   <button id="r-share">📤 Поделиться (выбрать чат вручную)</button>
   <button id="r-sent">✅ Отправлено</button>
+  <button id="r-home">🏠 На главный экран (отчёт сохранится)</button>
   <div class="small" id="r-note"></div>
 </div>
 
@@ -312,6 +313,7 @@ $("r-copy").onclick = async () => {
   $("r-note").textContent = "Скопировано. Вставь в чат бота и отправь.";
   setTimeout(() => { location.href = "https://t.me/" + BOT; }, 600);
 };
+$("r-home").onclick = () => openSetup();
 $("r-sent").onclick = () => { save(K_UNSENT, []); localStorage.removeItem(K_LAST); openSetup(); };
 
 // ---------------------------------------------------------------- вечер: настройки
